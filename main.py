@@ -162,15 +162,20 @@ async def callback_data(callback: types.CallbackQuery):
         cpu_result = cpu(username, token)
         if cpu_result != 'error':
             consoles_result, inline_consoles = consoles_info(username, token)
-            inline_update = [InlineKeyboardButton(text='update', callback_data='update')]
+            always_on_result, inline_always_on = always_on_info(username, token)
+            inline_update = [InlineKeyboardButton(text='Update', callback_data='update')]
             inline_keyboard = [inline_update]
             if inline_consoles:
                 inline_keyboard.append(inline_consoles)
+            if inline_always_on:
+                inline_keyboard.append(inline_always_on)
             message_id = callback.message.message_id
             await bot.edit_message_text(chat_id=user_id, message_id=message_id, text=f'*CPU Usage:* {cpu_result}\n\n'
-                                        f'*Your consoles:*{consoles_result}\n\nUpdated at {datetime.datetime.now(datetime.timezone.utc).strftime("%H:%M:%S %d.%m.%Y")}',
-                               parse_mode='Markdown', disable_web_page_preview=True,
-                               reply_markup=InlineKeyboardMarkup(inline_keyboard=inline_keyboard))
+                                        f'*Your consoles:*{consoles_result}\n\n'
+                                        f'*Always-on tasks:*{always_on_result}\n\n'
+                                        f'Updated at {datetime.datetime.now(datetime.timezone.utc).strftime("%H:%M:%S %d.%m.%Y")}',
+                                        parse_mode='Markdown', disable_web_page_preview=True,
+                                        reply_markup=InlineKeyboardMarkup(inline_keyboard=inline_keyboard))
         else:
             await bot.edit_message_text(text=f'error')
 
@@ -227,3 +232,4 @@ if __name__ == '__main__':
     sql_launch()
     print(f'The bot {Fore.RED}launches{Style.RESET_ALL} at {datetime.datetime.now().strftime("%H:%M:%S %d.%m.%Y")}')
     dp.run_polling(bot)
+    
