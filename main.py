@@ -53,8 +53,7 @@ def cpu(username, token):
         return f"{cpu_percent:.0f}% used – {cpu_usage:.2f}s of {cpu_limit}s. Resets in {time}"
 
     else:
-        error = str(response.content)
-        return error[error.find(":") + 2:error.rfind('"') - 1]
+        return 'error'
 
 
 def consoles_info(username, token):
@@ -81,6 +80,33 @@ def consoles_info(username, token):
         return result, inline_list
     else:
         return 'error', False
+
+
+def always_on_info(username, token):
+    response = requests.get(
+        f'https://www.pythonanywhere.com/api/v0/user/{username}/always_on/',
+        headers={'Authorization': f'Token {token}'})
+
+    if response.status_code == 200:
+        parsed_data = json.loads(response.content)
+        result = ''
+
+        if len(parsed_data) == 0:
+            return '\nYou have no tasks yet.', False
+
+        inline_list = []
+        for always_on in parsed_data:
+            command = always_on['command']
+            description = always_on['description']
+            always_on_id = always_on['id']
+            url = 'https://www.pythonanywhere.com' + always_on['url']
+            result += f'\n[{command}]({url})({description}) - `{always_on_id}`'
+            inline_list.append(InlineKeyboardButton(text=command,
+                                                    callback_data=f'always_on-{always_on_id}'))
+
+        return result, inline_list
+    else:
+        return '\nerror', False
 
 
 
@@ -134,16 +160,19 @@ async def callback_data(callback: types.CallbackQuery):
         username, token = sql_token_and_username(user_id)
 
         cpu_result = cpu(username, token)
-        if 'Error' not in cpu_result:
+        if cpu_result != 'error':
             consoles_result, inline_consoles = consoles_info(username, token)
             inline_update = [InlineKeyboardButton(text='update', callback_data='update')]
+            inline_keyboard = [inline_update]
+            if inline_consoles:
+                inline_keyboard.append(inline_consoles)
             message_id = callback.message.message_id
             await bot.edit_message_text(chat_id=user_id, message_id=message_id, text=f'*CPU Usage:* {cpu_result}\n\n'
                                         f'*Your consoles:*{consoles_result}\n\nUpdated at {datetime.datetime.now(datetime.timezone.utc).strftime("%H:%M:%S %d.%m.%Y")}',
                                parse_mode='Markdown', disable_web_page_preview=True,
-                               reply_markup=InlineKeyboardMarkup(inline_keyboard=[inline_consoles, inline_update]))
+                               reply_markup=InlineKeyboardMarkup(inline_keyboard=inline_keyboard))
         else:
-            await bot.edit_message_text(text=f'Error: {cpu_result}')
+            await bot.edit_message_text(text=f'error')
 
     if data[:8] == 'consoles':
         data = data[9:]
@@ -173,16 +202,24 @@ async def main_handler(message: types.Message) -> None:
     username, token = sql_token_and_username(user_id)
 
     cpu_result = cpu(username, token)
-    if 'Error' not in cpu_result:
+
+    if cpu_result != 'error':
         consoles_result, inline_consoles = consoles_info(username, token)
+        always_on_result, inline_always_on = always_on_info(username, token)
         inline_update = [InlineKeyboardButton(text='Update', callback_data='update')]
+        inline_keyboard = [inline_update]
+        if inline_consoles:
+            inline_keyboard.append(inline_consoles)
+        if inline_always_on:
+            inline_keyboard.append(inline_always_on)
         await bot.send_message(user_id, f'*CPU Usage:* {cpu_result}\n\n'
-                                        f'*Your consoles:*{consoles_result}',
+                                        f'*Your consoles:*{consoles_result}\n\n'
+                                        f'*Always-on tasks:*{always_on_result}',
                                parse_mode='Markdown', disable_web_page_preview=True,
-                               reply_markup=InlineKeyboardMarkup(inline_keyboard=[inline_consoles, inline_update]))
+                               reply_markup=InlineKeyboardMarkup(inline_keyboard=inline_keyboard))
     else:
-        await bot.send_message(user_id, 'Error: {cpu_result}')
-    
+        await bot.send_message(user_id, 'Error')
+
 
 
 
