@@ -1,8 +1,9 @@
 import requests
 import json
 import datetime
-from aiogram.types import InlineKeyboardButton
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from sql import sql_token_and_username
 
 def cpu(username, token):
 
@@ -84,3 +85,43 @@ def always_on_info(username, token):
         return result, inline_list
     else:
         return '\nerror', False
+
+
+def consoles(console_id, telegram_id):
+    username, token = sql_token_and_username(telegram_id)
+    response = requests.get(
+        f'https://www.pythonanywhere.com/api/v0/user/{username}/consoles/{console_id}',
+        headers={'Authorization': f'Token {token}'})
+
+    if response.status_code == 200:
+        data = json.loads(response.content)
+        user = data['user']
+        name = data['name']
+        executable = data['executable']
+        arguments = data['arguments']
+        working_directory = data['working_directory']
+        arguments_text = f'\narguments: {arguments}' if arguments != '' else ''
+        working_directory_text = f'\nworking directory: {working_directory}' if str(working_directory) != 'None' else ''
+        console_url = 'https://www.pythonanywhere.com/' + data['console_url']
+        info_result = (f'[{name}]({console_url}) - `{console_id}`\n'
+                       f'\nuser: {user}'
+                       f'\nexecutable: {executable}'
+                       f'{arguments_text}{working_directory_text}\n\n')
+
+        get_latest_output = requests.get(
+            f'https://www.pythonanywhere.com/api/v0/user/{username}/consoles/{console_id}/get_latest_output',
+            headers={'Authorization': f'Token {token}'})
+        output_data = json.loads(get_latest_output.content)
+        output_result = '\nLatest output:\n```shell' + output_data['output'] + '```'
+
+        inline_update = InlineKeyboardButton(text='Update', callback_data=f'consoles-{console_id}')
+        inline_delete = InlineKeyboardButton(text='Delete', callback_data=f'delete-consoles-{console_id}')
+        inline_back = InlineKeyboardButton(text='Backward', callback_data='update')
+        inline_keyboard = InlineKeyboardMarkup(inline_keyboard=[[inline_update], [inline_delete], [inline_back]])
+
+        result = info_result + output_result
+
+        return result, inline_keyboard
+
+    else:
+        return 'error'
