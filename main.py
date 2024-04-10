@@ -11,7 +11,7 @@ from aiogram.client.session.aiohttp import AiohttpSession
 
 
 from sql import sql_launch, sql_change, sql_token_and_username
-from function import cpu, consoles_info, always_on_info
+from function import cpu, consoles_info, always_on_info, consoles
 from config import bot_token, start_message
 
 # session = AiohttpSession(proxy="http://proxy.server:3128")
@@ -91,6 +91,7 @@ async def callback_data(callback: types.CallbackQuery):
     data = callback.data
     name = f'{callback.from_user.full_name}({callback.from_user.username})'
     user_id = callback.from_user.id
+    message_id = callback.message.message_id
 
     if data[:6] == 'update':
         username, token = sql_token_and_username(user_id)
@@ -105,18 +106,25 @@ async def callback_data(callback: types.CallbackQuery):
                 inline_keyboard.append(inline_consoles)
             if inline_always_on:
                 inline_keyboard.append(inline_always_on)
-            message_id = callback.message.message_id
             await bot.edit_message_text(chat_id=user_id, message_id=message_id, text=f'*CPU Usage:* {cpu_result}\n\n'
                                         f'*Your consoles:*{consoles_result}\n\n'
                                         f'*Always-on tasks:*{always_on_result}\n\n'
                                         f'Updated at {datetime.datetime.now(datetime.timezone.utc).strftime("%H:%M:%S %d.%m.%Y")}',
                                         parse_mode='Markdown', disable_web_page_preview=True,
                                         reply_markup=InlineKeyboardMarkup(inline_keyboard=inline_keyboard))
+
         else:
             await bot.edit_message_text(text=f'error')
 
-    if data[:8] == 'consoles':
-        data = data[9:]
+    elif data[:8] == 'consoles':
+        console_id = data.split('-')[1]
+        result, inline_keyboard1 = consoles(console_id, user_id)
+        await bot.edit_message_text(chat_id=user_id, message_id=message_id, parse_mode='Markdown',
+                                    disable_web_page_preview=True, text=result, reply_markup=inline_keyboard1)
+
+    elif data[:6] == 'delete':
+        await callback.answer('In development')
+
 
     await callback.answer()
     print_fuc(f'callback {data}', name)
