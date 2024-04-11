@@ -3,7 +3,8 @@ import json
 import datetime
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from sql import sql_token_and_username
+from sql import sql_username_and_token
+
 
 def cpu(username, token):
 
@@ -87,8 +88,7 @@ def always_on_info(username, token):
         return '\nerror', False
 
 
-def consoles(console_id, telegram_id):
-    username, token = sql_token_and_username(telegram_id)
+def consoles(console_id, username, token):
     response = requests.get(
         f'https://www.pythonanywhere.com/api/v0/user/{username}/consoles/{console_id}',
         headers={'Authorization': f'Token {token}'})
@@ -103,16 +103,21 @@ def consoles(console_id, telegram_id):
         arguments_text = f'\narguments: {arguments}' if arguments != '' else ''
         working_directory_text = f'\nworking directory: {working_directory}' if str(working_directory) != 'None' else ''
         console_url = 'https://www.pythonanywhere.com/' + data['console_url']
-        info_result = (f'[{name}]({console_url}) - `{console_id}`\n'
+        info_result = (f'[{name}]({console_url}) - `{console_id}`'
                        f'\nuser: {user}'
                        f'\nexecutable: {executable}'
-                       f'{arguments_text}{working_directory_text}\n\n')
+                       f'{arguments_text}{working_directory_text}\n')
 
         get_latest_output = requests.get(
             f'https://www.pythonanywhere.com/api/v0/user/{username}/consoles/{console_id}/get_latest_output',
             headers={'Authorization': f'Token {token}'})
         output_data = json.loads(get_latest_output.content)
-        output_result = '\nLatest output:\n```shell' + output_data['output'] + '```'
+        output = output_data['output']
+        count = 4096 - len(info_result)
+        while len(output) >= count:
+            output = output[len(output_data)-count:]
+
+        output_result = '\nLatest output:\n```shell\n' + output + '```'
 
         inline_update = InlineKeyboardButton(text='Update', callback_data=f'consoles-{console_id}')
         inline_delete = InlineKeyboardButton(text='Delete', callback_data=f'delete-consoles-{console_id}')
@@ -124,4 +129,4 @@ def consoles(console_id, telegram_id):
         return result, inline_keyboard
 
     else:
-        return 'error'
+        return 'Error',  InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='Backward', callback_data='update')]])
