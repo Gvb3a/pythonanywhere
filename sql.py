@@ -15,14 +15,13 @@ def sql_launch():
     connection.close()
 
 
-def sql_token_and_username(user_id):
+def sql_username_and_token(user_id):
     connection = sqlite3.connect('pythonanywhere.db')
     cursor = connection.cursor()
 
     cursor.execute(f"SELECT * FROM user WHERE id = {user_id}")
     row = cursor.fetchone()
     connection.close()
-
     if row is None or row[2] == 'None':
         return ['None', 'None']
     else:
