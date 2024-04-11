@@ -9,7 +9,7 @@ from aiogram.fsm.state import default_state, State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.client.session.aiohttp import AiohttpSession
 
-from sql import sql_launch, sql_change, sql_token_and_username
+from sql import sql_launch, sql_change, sql_username_and_token
 from function import cpu, consoles_info, always_on_info, consoles
 from config import bot_token, start_message
 
@@ -38,8 +38,8 @@ async def command_start_handler(message: Message) -> None:
 async def command_setting(message: Message) -> None:
     user_id = message.from_user.id  # recognise the id
     print_fuc('/setting', message.from_user.full_name, message.from_user.username)
-    # from the database (by id) find out token and username (pythonanywhere, not telegram) 
-    username, token = sql_token_and_username(user_id)
+    # from the database (by id) find out token and username (pythonanywhere, not telegram)
+    username, token = sql_username_and_token(user_id)
     await bot.send_message(user_id, text=
                           'This is your settings. You need to provide your username and API token to retrieve the data.' 
                           f'\nid: {user_id}' 
@@ -88,9 +88,9 @@ async def callback_data(callback: types.CallbackQuery):
     print_fuc(f'callback {data}', callback.from_user.full_name, callback.from_user.username)
     user_id = callback.from_user.id
     message_id = callback.message.message_id
+    username, token = sql_username_and_token(user_id)
 
     if data[:6] == 'update':
-        username, token = sql_token_and_username(user_id)
 
         cpu_result = cpu(username, token)
         if cpu_result != 'error':
@@ -114,12 +114,26 @@ async def callback_data(callback: types.CallbackQuery):
 
     elif data[:8] == 'consoles':
         console_id = data.split('-')[1]
-        result, inline_keyboard1 = consoles(console_id, user_id)
-        await bot.edit_message_text(chat_id=user_id, message_id=message_id, parse_mode='Markdown',
-                                    disable_web_page_preview=True, text=result, reply_markup=inline_keyboard1)
+        result, inline_keyboard = consoles(console_id, username, token)
+        await bot.edit_message_text(chat_id=user_id, message_id=message_id, text=result + f'\nUpdated at '
+                                                                                          f'{datetime.datetime.now(datetime.timezone.utc).strftime("%H:%M:%S %d.%m.%Y")}',
+                                    parse_mode='Markdown', disable_web_page_preview=True, reply_markup=inline_keyboard)
 
     elif data[:6] == 'delete':
-        await callback.answer('In development')
+        what_we_remove, object_id = data[:7].split('-')
+        response = requests.delete(f'https://www.pythonanywhere.com/api/v0/user/{username}/{what_we_remove}/{object_id}',
+                                headers={'Authorization': f'Token {token}'})
+        inline_back = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='Backward', callback_data='update')]])
+
+        if response.status_code == 200:
+            if what_we_remove == 'consoles':
+                what_we_remove = 'console'
+            else:
+                what_we_remove = 'always-on task'
+            text = f'The {what_we_remove} has been successfully delete✅'
+            await bot.edit_message_text(chat_id=user_id, message_id=message_id, text=text, reply_markup=inline_back)
+        else:
+            await callback.answer(f'Error', show_alert=True)
 
 
     await callback.answer()
@@ -147,7 +161,7 @@ async def main_handler(message: types.Message) -> None:
     print_fuc('message', message.from_user.full_name, message.from_user.username)
     user_id = message.from_user.id
 
-    username, token = sql_token_and_username(user_id)
+    username, token = sql_username_and_token(user_id)
 
     cpu_result = cpu(username, token)
 
