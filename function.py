@@ -3,8 +3,6 @@ import json
 import datetime
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from sql import sql_username_and_token
-
 
 def cpu(username, token):
 
@@ -41,24 +39,59 @@ def consoles_info(username, token):
         headers={'Authorization': f'Token {token}'})
 
     if response.status_code == 200:
-        parsed_data = json.loads(response.content)
+        data = json.loads(response.content)
         result = ''
 
-        if len(parsed_data) == 0:
-            return 'You have no consoles.', False
+        if len(data) == 0:
+            return '\nYou have no consoles.', False
 
         inline_list = []
-        for console in parsed_data:
+        for console in data:
             name = console['name']
             console_id = console['id']
             console_url = 'https://www.pythonanywhere.com' + console['console_url']
             result += f'\n[{name}]({console_url}) - `{console_id}`'
             inline_list.append(InlineKeyboardButton(text=name,
                                                     callback_data=f'consoles-{console_id}'))
-
         return result, inline_list
     else:
-        return 'error', False
+        return '\nerror', False
+
+
+def shared_with_you_info(username, token):
+    response = requests.get(
+        f'https://www.pythonanywhere.com/api/v0/user/{username}/consoles/shared_with_you',
+        headers={'Authorization': f'Token {token}'})
+
+    if response.status_code == 200:
+        data = json.loads(response.content)
+
+        if len(data) == 0:
+            return '\nNo-one has shared any consoles with you :-('
+
+        result = ''
+        for console in data:
+            name = console['name']
+            console_id = console['id']
+            console_url = 'https://www.pythonanywhere.com' + console['console_url']
+            user = console['user']
+            result += f'\n[{name}]({console_url})({user}) - `{console_id}`'
+
+        return result
+    else:
+        return '\nerror'
+
+
+def consoles_send_input(username, token, console_id, text):
+    response = requests.post(
+        f'https://www.pythonanywhere.com/api/v0/user/{username}/consoles/{console_id}/send_input/',
+        headers={'Authorization': f'Token {token}'},
+        data={'input': text}
+    )
+    if response.status_code == 200:
+        return 'Success✅'
+    else:
+        return 'Error'
 
 
 def always_on_info(username, token):
@@ -111,18 +144,23 @@ def consoles(console_id, username, token):
         get_latest_output = requests.get(
             f'https://www.pythonanywhere.com/api/v0/user/{username}/consoles/{console_id}/get_latest_output',
             headers={'Authorization': f'Token {token}'})
-        output_data = json.loads(get_latest_output.content)
-        output = output_data['output']
-        count = 4096 - len(info_result)
-        while len(output) >= count:
-            output = output[len(output_data)-count:]
+        if get_latest_output.status_code == 200:
+            output_data = json.loads(get_latest_output.content)
+            output = output_data['output']
+            count = 1280
+            if len(output) >= count:
+                output = output[len(output)-count:]
+            output_result = '\nLatest output:\n```shell\n' + output + '```'
+        else:
+            output_result = '\nLatest output:\nError. Most likely the console will need to be restarted\n'
 
-        output_result = '\nLatest output:\n```shell\n' + output + '```'
+
 
         inline_update = InlineKeyboardButton(text='Update', callback_data=f'consoles-{console_id}')
+        inline_send_input = InlineKeyboardButton(text='Send input', callback_data=f'send_input-{console_id}')
         inline_delete = InlineKeyboardButton(text='Delete', callback_data=f'delete-consoles-{console_id}')
         inline_back = InlineKeyboardButton(text='Backward', callback_data='update')
-        inline_keyboard = InlineKeyboardMarkup(inline_keyboard=[[inline_update], [inline_delete], [inline_back]])
+        inline_keyboard = InlineKeyboardMarkup(inline_keyboard=[[inline_update], [inline_send_input], [inline_delete], [inline_back]])
 
         result = info_result + output_result
 
