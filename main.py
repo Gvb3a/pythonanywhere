@@ -10,7 +10,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.client.session.aiohttp import AiohttpSession
 
 from sql import sql_launch, sql_change, sql_username_and_token
-from function import cpu, consoles_info, always_on_info, consoles
+from function import cpu, consoles_info, always_on_info, consoles, shared_with_you_info, consoles_send_input
 from config import bot_token, start_message
 
 session = AiohttpSession(proxy="http://proxy.server:3128")
@@ -21,6 +21,8 @@ dp = Dispatcher(storage=storage)
 
 class FSMFillForm(StatesGroup):
     fill_change = State()
+    fill_send_input = State()
+fsm_dict = dict()
 
 
 def print_fuc(message, name, username):
@@ -82,45 +84,60 @@ async def command_consoles(message: Message) -> None:
     pass
 
 
+def main_info(username, token):
+
+    cpu_result = cpu(username, token)
+
+    inline_update = [InlineKeyboardButton(text='Update', callback_data='update')]
+
+    if cpu_result != 'error':
+
+        consoles_result, inline_consoles = consoles_info(username, token)
+        always_on_result, inline_always_on = always_on_info(username, token)
+        shared_with_you_result = shared_with_you_info(username, token)
+
+        inline_keyboard = [inline_update]
+        if inline_consoles:
+            inline_keyboard.append(inline_consoles)
+        if inline_always_on:
+            inline_keyboard.append(inline_always_on)
+
+        text = (f'*CPU Usage:* {cpu_result}\n\n'
+                f'*Always-on tasks:*{always_on_result}\n\n'
+                f'*Your consoles:*{consoles_result}\n\n'
+                f'*Consoles shared with you:*{shared_with_you_result}\n\n'
+                f'Updated at {datetime.datetime.now(datetime.timezone.utc).strftime("%H:%M:%S %d.%m.%Y")}')
+        inline_keyboard = InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
+        return text, inline_keyboard
+
+    else:
+        return 'error', InlineKeyboardMarkup(inline_keyboard=[inline_update])
+
+
 @dp.callback_query(F.data)
-async def callback_data(callback: types.CallbackQuery):
+async def callback_data(callback: types.CallbackQuery, state: FSMContext):
     data = callback.data
     print_fuc(f'callback {data}', callback.from_user.full_name, callback.from_user.username)
     user_id = callback.from_user.id
     message_id = callback.message.message_id
     username, token = sql_username_and_token(user_id)
+    data = data.split('-')
+    call = data[0]
 
-    if data[:6] == 'update':
+    if call == 'update':
+        text, inline_keyboard = main_info(username, token)
+        await bot.edit_message_text(chat_id=user_id, message_id=message_id, text=text, parse_mode='Markdown',
+                                    disable_web_page_preview=True, reply_markup=inline_keyboard)
 
-        cpu_result = cpu(username, token)
-        if cpu_result != 'error':
-            consoles_result, inline_consoles = consoles_info(username, token)
-            always_on_result, inline_always_on = always_on_info(username, token)
-            inline_update = [InlineKeyboardButton(text='Update', callback_data='update')]
-            inline_keyboard = [inline_update]
-            if inline_consoles:
-                inline_keyboard.append(inline_consoles)
-            if inline_always_on:
-                inline_keyboard.append(inline_always_on)
-            await bot.edit_message_text(chat_id=user_id, message_id=message_id, text=f'*CPU Usage:* {cpu_result}\n\n'
-                                        f'*Your consoles:*{consoles_result}\n\n'
-                                        f'*Always-on tasks:*{always_on_result}\n\n'
-                                        f'Updated at {datetime.datetime.now(datetime.timezone.utc).strftime("%H:%M:%S %d.%m.%Y")}',
-                                        parse_mode='Markdown', disable_web_page_preview=True,
-                                        reply_markup=InlineKeyboardMarkup(inline_keyboard=inline_keyboard))
-
-        else:
-            await bot.edit_message_text(text=f'error')
-
-    elif data[:8] == 'consoles':
-        console_id = data.split('-')[1]
+    elif call == 'consoles':
+        console_id = data[1]
         result, inline_keyboard = consoles(console_id, username, token)
         await bot.edit_message_text(chat_id=user_id, message_id=message_id, text=result + f'\nUpdated at '
                                                                                           f'{datetime.datetime.now(datetime.timezone.utc).strftime("%H:%M:%S %d.%m.%Y")}',
                                     parse_mode='Markdown', disable_web_page_preview=True, reply_markup=inline_keyboard)
 
-    elif data[:6] == 'delete':
-        what_we_remove, object_id = data[:7].split('-')
+    elif call == 'delete':
+        what_we_remove, object_id = data[1], data[2]
         response = requests.delete(f'https://www.pythonanywhere.com/api/v0/user/{username}/{what_we_remove}/{object_id}',
                                 headers={'Authorization': f'Token {token}'})
         inline_back = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='Backward', callback_data='update')]])
@@ -135,6 +152,11 @@ async def callback_data(callback: types.CallbackQuery):
         else:
             await callback.answer(f'Error', show_alert=True)
 
+    elif call == 'send_input':
+        await bot.send_message(chat_id=user_id, text='"type" into the console. Add a "\\n" for return.')
+        await state.set_state(FSMFillForm.fill_send_input)
+        global fsm_dict
+        fsm_dict[str(user_id)] = data[1]
 
     await callback.answer()
 
@@ -156,6 +178,18 @@ async def process_name_sent(message: Message, state: FSMContext):
     await state.clear()
 
 
+@dp.message(StateFilter(FSMFillForm.fill_send_input))
+async def send_input(message: Message, state: FSMContext):
+    text = message.text
+    global fsm_dict
+    user_id = str(message.from_user.id)
+    console_id = fsm_dict[user_id]
+    username, token = sql_username_and_token(message.from_user.id)
+    await message.answer(text=consoles_send_input(username, token, console_id, text))
+    fsm_dict.pop(user_id)
+    await state.clear()
+
+
 @dp.message(StateFilter(default_state))
 async def main_handler(message: types.Message) -> None:
     print_fuc('message', message.from_user.full_name, message.from_user.username)
@@ -163,24 +197,9 @@ async def main_handler(message: types.Message) -> None:
 
     username, token = sql_username_and_token(user_id)
 
-    cpu_result = cpu(username, token)
-
-    if cpu_result != 'error':
-        consoles_result, inline_consoles = consoles_info(username, token)
-        always_on_result, inline_always_on = always_on_info(username, token)
-        inline_update = [InlineKeyboardButton(text='Update', callback_data='update')]
-        inline_keyboard = [inline_update]
-        if inline_consoles:
-            inline_keyboard.append(inline_consoles)
-        if inline_always_on:
-            inline_keyboard.append(inline_always_on)
-        await bot.send_message(user_id, f'*CPU Usage:* {cpu_result}\n\n'
-                                        f'*Your consoles:*{consoles_result}\n\n'
-                                        f'*Always-on tasks:*{always_on_result}',
-                               parse_mode='Markdown', disable_web_page_preview=True,
-                               reply_markup=InlineKeyboardMarkup(inline_keyboard=inline_keyboard))
-    else:
-        await bot.send_message(user_id, 'Error')
+    text, inline_keyboard = main_info(username, token)
+    await bot.send_message(user_id, text=text, parse_mode='Markdown',
+                           disable_web_page_preview=True, reply_markup=inline_keyboard)
 
 
 if __name__ == '__main__':
