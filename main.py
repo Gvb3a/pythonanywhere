@@ -10,10 +10,10 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.client.session.aiohttp import AiohttpSession
 
 from sql import sql_launch, sql_change, sql_username_and_token
-from function import cpu, consoles_info, always_on_info, consoles, shared_with_you_info, consoles_send_input
+from function import cpu, consoles_info, always_on_info, consoles, shared_with_you_info, consoles_send_input, always_on
 from config import bot_token, start_message
 
-session = AiohttpSession(proxy="http://proxy.server:3128")
+# session = AiohttpSession(proxy="http://proxy.server:3128")
 bot = Bot(bot_token)  # bot = Bot(bot_token, session=session)
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
@@ -22,6 +22,7 @@ dp = Dispatcher(storage=storage)
 class FSMFillForm(StatesGroup):
     fill_change = State()
     fill_send_input = State()
+
 fsm_dict = dict()
 
 
@@ -123,6 +124,8 @@ async def callback_data(callback: types.CallbackQuery, state: FSMContext):
     username, token = sql_username_and_token(user_id)
     data = data.split('-')
     call = data[0]
+    callback_answer_text = ''
+    show_alert = False
 
     if call == 'update':
         text, inline_keyboard = main_info(username, token)
@@ -136,21 +139,29 @@ async def callback_data(callback: types.CallbackQuery, state: FSMContext):
                                                                                           f'{datetime.datetime.now(datetime.timezone.utc).strftime("%H:%M:%S %d.%m.%Y")}',
                                     parse_mode='Markdown', disable_web_page_preview=True, reply_markup=inline_keyboard)
 
+    elif call == 'always_on':
+        always_on_id = data[1]
+        result, inline_keyboard = always_on(always_on_id, username, token)
+        await bot.edit_message_text(chat_id=user_id, message_id=message_id, text=result,
+                                    parse_mode='HTML', disable_web_page_preview=True, reply_markup=inline_keyboard)
+
     elif call == 'delete':
         what_we_remove, object_id = data[1], data[2]
         response = requests.delete(f'https://www.pythonanywhere.com/api/v0/user/{username}/{what_we_remove}/{object_id}',
                                 headers={'Authorization': f'Token {token}'})
-        inline_back = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='Backward', callback_data='update')]])
 
-        if response.status_code == 200:
+        if response.status_code == 204:
             if what_we_remove == 'consoles':
                 what_we_remove = 'console'
             else:
                 what_we_remove = 'always-on task'
-            text = f'The {what_we_remove} has been successfully delete✅'
-            await bot.edit_message_text(chat_id=user_id, message_id=message_id, text=text, reply_markup=inline_back)
+            text, inline_keyboard = main_info(username, token)
+            await bot.edit_message_text(chat_id=user_id, message_id=message_id, text=text, parse_mode='Markdown',
+                                        disable_web_page_preview=True, reply_markup=inline_keyboard)
+            callback_answer_text = f'The {what_we_remove} has been successfully delete✅'
         else:
-            await callback.answer(f'Error', show_alert=True)
+            callback_answer_text = 'Error'
+            show_alert = True
 
     elif call == 'send_input':
         await bot.send_message(chat_id=user_id, text='"type" into the console. Add a "\\n" for return.')
@@ -158,7 +169,7 @@ async def callback_data(callback: types.CallbackQuery, state: FSMContext):
         global fsm_dict
         fsm_dict[str(user_id)] = data[1]
 
-    await callback.answer()
+    await callback.answer(callback_answer_text, show_alert=show_alert)
 
 
 @dp.message(StateFilter(FSMFillForm.fill_change))
