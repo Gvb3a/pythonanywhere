@@ -50,12 +50,12 @@ def consoles_info(username, token):
             name = console['name']
             console_id = console['id']
             console_url = 'https://www.pythonanywhere.com' + console['console_url']
-            result += f'\n[{name}]({console_url}) - `{console_id}`'
+            result += f'\n[{name}]({console_url})'
             inline_list.append(InlineKeyboardButton(text=name,
                                                     callback_data=f'consoles-{console_id}'))
         return result, inline_list
     else:
-        return '\nerror', False
+        return '\nError', False
 
 
 def shared_with_you_info(username, token):
@@ -79,7 +79,7 @@ def shared_with_you_info(username, token):
 
         return result
     else:
-        return '\nerror'
+        return '\nError'
 
 
 def consoles_send_input(username, token, console_id, text):
@@ -110,21 +110,59 @@ def always_on_info(username, token):
         for always_on in parsed_data:
             command = always_on['command']
             description = always_on['description']
+            description_result = f'({description})' if description != '' else ''
             always_on_id = always_on['id']
-            url = 'https://www.pythonanywhere.com' + always_on['url']
-            result += f'\n[{command}]({url})({description}) - `{always_on_id}`'
+            url = 'https://www.pythonanywhere.com' + always_on['logfile']
+            state = always_on['state']
+            result += f'\n[{command}]({url}){description_result} - {state}'
             inline_list.append(InlineKeyboardButton(text=command,
                                                     callback_data=f'always_on-{always_on_id}'))
 
         return result, inline_list
     else:
-        return '\nerror', False
+        return '\nError', False
+
+
+def always_on(always_on_id, username, token):
+    response = requests.get(
+        f'https://www.pythonanywhere.com/api/v0/user/{username}/always_on/{always_on_id}',
+        headers={'Authorization': f'Token {token}'})
+    inline_back = InlineKeyboardButton(text='Backward', callback_data='update')
+
+    if response.status_code == 200:
+        data = json.loads(response.content)
+        id_result = f'id: {always_on_id}\n'
+        user = f"user: {data['user']}\n"
+        logfile_link = 'https://www.pythonanywhere.com' + data['logfile']
+        name = f'<a href="{logfile_link}">{data["command"]}</a>' + f' - {data["state"]}\n'
+        description = data['description']
+        description_result = f'description: {description}\n' if description != '' else ''
+        can = ['enabled, ', 'can_enable, ', 'can_disable, ', 'can_edit, ', 'can_delete, ', 'can_restart, ']
+        true_list = ''
+        false_list = ''
+        for i in can:
+            if data[i[:-2]]:
+                true_list += i
+            else:
+                false_list += i
+        if true_list != '':
+            true_list = 'True: ' + true_list[:-2].replace('can_', 'can ') + '\n'
+        if false_list != '':
+            false_list = 'False: ' + false_list[:-2].replace('can_', 'can ') + '\n'
+        result = name + id_result + user + description_result + true_list + false_list
+
+        inline_update = InlineKeyboardButton(text='Update', callback_data=f'always_on-{always_on_id}')
+        inline_list = InlineKeyboardMarkup(inline_keyboard=[[inline_update], [inline_back]])
+        return result, inline_list
+    else:
+        return 'Error', InlineKeyboardMarkup(inline_keyboard=[[inline_back]])
 
 
 def consoles(console_id, username, token):
     response = requests.get(
         f'https://www.pythonanywhere.com/api/v0/user/{username}/consoles/{console_id}',
         headers={'Authorization': f'Token {token}'})
+    inline_back = InlineKeyboardButton(text='Backward', callback_data='update')
 
     if response.status_code == 200:
         data = json.loads(response.content)
@@ -136,7 +174,8 @@ def consoles(console_id, username, token):
         arguments_text = f'\narguments: {arguments}' if arguments != '' else ''
         working_directory_text = f'\nworking directory: {working_directory}' if str(working_directory) != 'None' else ''
         console_url = 'https://www.pythonanywhere.com/' + data['console_url']
-        info_result = (f'[{name}]({console_url}) - `{console_id}`'
+        info_result = (f'[{name}]({console_url})'
+                       f'\nid: {console_id}'
                        f'\nuser: {user}'
                        f'\nexecutable: {executable}'
                        f'{arguments_text}{working_directory_text}\n')
@@ -144,10 +183,11 @@ def consoles(console_id, username, token):
         get_latest_output = requests.get(
             f'https://www.pythonanywhere.com/api/v0/user/{username}/consoles/{console_id}/get_latest_output',
             headers={'Authorization': f'Token {token}'})
+
         if get_latest_output.status_code == 200:
             output_data = json.loads(get_latest_output.content)
             output = output_data['output']
-            count = 1280
+            count = 2048
             if len(output) >= count:
                 output = output[len(output)-count:]
             output_result = '\nLatest output:\n```shell\n' + output + '```'
@@ -159,7 +199,6 @@ def consoles(console_id, username, token):
         inline_update = InlineKeyboardButton(text='Update', callback_data=f'consoles-{console_id}')
         inline_send_input = InlineKeyboardButton(text='Send input', callback_data=f'send_input-{console_id}')
         inline_delete = InlineKeyboardButton(text='Delete', callback_data=f'delete-consoles-{console_id}')
-        inline_back = InlineKeyboardButton(text='Backward', callback_data='update')
         inline_keyboard = InlineKeyboardMarkup(inline_keyboard=[[inline_update], [inline_send_input], [inline_delete], [inline_back]])
 
         result = info_result + output_result
@@ -167,4 +206,4 @@ def consoles(console_id, username, token):
         return result, inline_keyboard
 
     else:
-        return 'Error',  InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='Backward', callback_data='update')]])
+        return 'Error',  InlineKeyboardMarkup(inline_keyboard=[[inline_back]])
