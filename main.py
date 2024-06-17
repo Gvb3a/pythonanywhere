@@ -12,11 +12,15 @@ from aiogram.client.session.aiohttp import AiohttpSession
 from sql import sql_launch, sql_change, sql_username_and_token
 from function import cpu, consoles_info, always_on_info, consoles, shared_with_you_info, consoles_send_input, always_on
 from config import bot_token, start_message
+"""
+from .sql import sql_launch, sql_change, sql_username_and_token
+from .function import cpu, consoles_info, always_on_info, consoles, shared_with_you_info, consoles_send_input, always_on
+from .config import bot_token, start_message
+"""
 
-# session = AiohttpSession(proxy="http://proxy.server:3128")
-bot = Bot(bot_token)  # bot = Bot(bot_token, session=session)
+bot = Bot(bot_token)
 storage = MemoryStorage()
-dp = Dispatcher(storage=storage)
+dp = Dispatcher(storage=storage, bot=bot)
 
 
 class FSMFillForm(StatesGroup):
@@ -135,14 +139,15 @@ async def callback_data(callback: types.CallbackQuery, state: FSMContext):
     elif call == 'consoles':
         console_id = data[1]
         result, inline_keyboard = consoles(console_id, username, token)
-        await bot.edit_message_text(chat_id=user_id, message_id=message_id, text=result + f'\nUpdated at '
-                                                                                          f'{datetime.datetime.now(datetime.timezone.utc).strftime("%H:%M:%S %d.%m.%Y")}',
-                                    parse_mode='Markdown', disable_web_page_preview=True, reply_markup=inline_keyboard)
+        result = result + f'\nUpdated at {datetime.datetime.now(datetime.timezone.utc).strftime("%H:%M:%S %d.%m.%Y")}'
+        await bot.edit_message_text(chat_id=user_id, message_id=message_id, text=result, parse_mode='Markdown',
+                                        disable_web_page_preview=True, reply_markup=inline_keyboard)
 
     elif call == 'always_on':
         always_on_id = data[1]
         result, inline_keyboard = always_on(always_on_id, username, token)
-        await bot.edit_message_text(chat_id=user_id, message_id=message_id, text=result,
+        await bot.edit_message_text(chat_id=user_id, message_id=message_id, text=result + f'\nUpdated at '
+                                                                                          f'{datetime.datetime.now(datetime.timezone.utc).strftime("%H:%M:%S %d.%m.%Y")}',
                                     parse_mode='HTML', disable_web_page_preview=True, reply_markup=inline_keyboard)
 
     elif call == 'delete':
@@ -216,5 +221,4 @@ async def main_handler(message: types.Message) -> None:
 if __name__ == '__main__':
     sql_launch()
     print(f'The bot launches at {datetime.datetime.now().strftime("%H:%M:%S %d.%m.%Y")}')
-    dp.run_polling(bot)
-    
+    dp.run_polling(bot, skip_updates=True)
